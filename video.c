@@ -1226,29 +1226,11 @@ void VideoDelHwDecoder(VideoHwDecoder * decoder)
 extern int SetCurrentPCR(int, uint64_t );
 extern int AHandle;
 void ProcessClockBuffer(int handle)
-	{
-
-		// truncate to 32bit
-	
+{
 		
 		uint64_t pts = (uint64_t)AudioGetClock(); //(uint64_t) GetCurrentAPts(AHandle) ;
-		static uint64_t apts;
-	#if 0
-		uint64_t diff;
-		if (pts != AV_NOPTS_VALUE) {
-			if (apts != AV_NOPTS_VALUE) { 
-				if (pts > apts) {
-				   diff = pts -  apts;
-				} else {
-				   diff = apts -  pts;
-				}
-				if (diff > 0x100000) {
-					printf("pts wrap  %#012" PRIx64 "  %#012" PRIx64 "  %#012" PRIx64 "  \n",pts, apts,diff);
-					//amlReset();
-				}
-			}
-		}
-	#endif
+		uint64_t apts;
+
 		apts = pts;
 		pts &= 0xffffffff;
 
@@ -1284,14 +1266,11 @@ void ProcessClockBuffer(int handle)
 		if ((driftFrames >= maxDelta || driftFrames <= -maxDelta) && abs(driftFrames) < 1000)
 		{
 			{
-
 				SetCurrentPCR(handle,apts);
-
 				//printf("AmlVideoSink: Adjust PTS - apts= %#012" PRIx64 " vpts %#012" PRIx64 "   (%f frames)\n", pts , vpts , driftFrames);
 			}
 		}
-
-	}
+}
 
 extern char AudioVideoIsReady;
 void CodecVideoDecode(VideoDecoder * decoder, const AVPacket * avpkt)
@@ -1454,7 +1433,7 @@ void OdroidDisplayHandlerThread(void)
 		free = amlGetBufferFree(decoder->pip);
 		//printf("Free in Prozent: %d\n",free);
 
-		if (free > 60) {
+		if ( free > 40) {
 			// FIXME: hot polling
 			// fetch+decode or reopen
 			err = VideoDecodeInput(decoder->Stream);
@@ -1843,7 +1822,7 @@ bool getResolution(char *mode) {
 	int fd2 = open("/dev/amstream_vframe", O_WRONLY);  // can we open a second time
 
 	if (fd2 >= 0 ) {
-		vformat_t amlFormat = (vformat_t)VFORMAT_MPEG12;
+		int amlFormat = VFORMAT_MPEG12;
 		char vfm_status[512];
 		use_pip = 1;
 
@@ -1971,12 +1950,13 @@ int codec_h_ioctl_set(int h, int subcmd, unsigned long  paramter)
     case AMSTREAM_SET_DEMUX:
     case AMSTREAM_SET_VIDEO_DELAY_LIMIT_MS:
     case AMSTREAM_SET_AUDIO_DELAY_LIMIT_MS:
-	case AMSTREAM_SET_FRAME_BASE_PATH:
+    case AMSTREAM_SET_FRAME_BASE_PATH:
     case AMSTREAM_SET_DRMMODE: {
         struct am_ioctl_parm parm;
         memset(&parm, 0, sizeof(parm));
         parm.cmd = subcmd;
         parm.data_32 = paramter;
+        parm.data_64 = paramter;
         parm_new = (unsigned long)&parm;
         r = ioctl(h, cmd_new, parm_new);
     }
@@ -2033,7 +2013,6 @@ const char* CODEC_VIDEO_ES_HEVC_DEVICE = "/dev/amstream_hevc";
 const char* CODEC_VIDEO_ES_DEVICE_SCHED = "/dev/amstream_vframe";
 const char* CODEC_VIDEO_ES_HEVC_DEVICE_SCHED = "/dev/amstream_hevc_sched";
 
-
 void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 {
 
@@ -2041,9 +2020,8 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 	int pip = hwdecoder->pip;
 	// Open codec
 	int flags = O_WRONLY;
-	vformat_t amlFormat = (vformat_t)0;
+	int amlFormat = 0;
 	dec_sysinfo_t am_sysinfo = { 0 };
-
 
 	VideoSetSyncThresh(IsReplay() ? 0 : ConfigVideoFastSwitch ? 0 : 1);
 
@@ -2068,9 +2046,7 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 			}
 			break;
 		case Avc:
-
 			Debug(3,"AmlVideoSink - VIDEO/H264\n");
-
 			amlFormat = VFORMAT_H264;
 			am_sysinfo.format = VIDEO_DEC_FORMAT_H264;
 			if (use_pip) {
@@ -2122,7 +2098,8 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 	//am_sysinfo.param = (void*)(EXTERNAL_PTS | SYNC_OUTSIDE | USE_IDR_FRAMERATE | UCODE_IP_ONLY_PARAM);
 	//am_sysinfo.param = (void*)(SYNC_OUTSIDE | USE_IDR_FRAMERATE);
 	//am_sysinfo.param = (void*)(EXTERNAL_PTS | SYNC_OUTSIDE | USE_IDR_FRAMERATE);
-	am_sysinfo.param = (void*)(SYNC_OUTSIDE);
+	//am_sysinfo.param = (void*)(SYNC_OUTSIDE);
+	am_sysinfo.param = (void*)(EXTERNAL_PTS);
 
 	// Rotation (clockwise)
 	//am_sysinfo.param = (void*)((unsigned long)(am_sysinfo.param) | 0x10000); //90
@@ -2132,75 +2109,9 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 
 	// Note: Testing has shown that the ALSA clock requires the +1
 	am_sysinfo.rate = 96000.0 / frameRate + 0.5;
-
 	//am_sysinfo.width = width;
 	//am_sysinfo.height = height;
 	//am_sysinfo.ratio64 = (((int64_t)width) << 32) | ((int64_t)height);
-
-#if 0
-	switch (format)
-	{
-		case Mpeg2:
-			Debug(3,"AmlVideoSink - VIDEO/MPEG2\n");
-			amlFormat = VFORMAT_MPEG12;
-			am_sysinfo.format = VIDEO_DEC_FORMAT_UNKNOW;
-			break;
-
-		case Mpeg4V3:
-			Debug(3,"AmlVideoSink - VIDEO/MPEG4V3\n");
-
-			amlFormat = VFORMAT_MPEG4;
-			am_sysinfo.format = VIDEO_DEC_FORMAT_MPEG4_3;
-			break;
-
-		case Mpeg4:
-			Debug(3,"AmlVideoSink - VIDEO/MPEG4\n");
-
-			amlFormat = VFORMAT_MPEG4;
-			am_sysinfo.format = VIDEO_DEC_FORMAT_MPEG4_5;
-			break;
-
-		case Avc:
-		{
-			// if (width > 1920 || height > 1080)
-			// {
-			// 	printf("AmlVideoSink - VIDEO/H264_4K2K\n");
-
-			// 	amlFormat = VFORMAT_H264_4K2K;
-			// 	am_sysinfo.format = VIDEO_DEC_FORMAT_H264_4K2K;
-			// }
-			// else
-			{
-				Debug(3,"AmlVideoSink - VIDEO/H264\n");
-
-				amlFormat = VFORMAT_H264;
-				am_sysinfo.format = VIDEO_DEC_FORMAT_H264;
-			}
-		}
-		break;
-
-		case Hevc:
-			Debug(3,"AmlVideoSink - VIDEO/HEVC\n");
-
-			amlFormat = VFORMAT_HEVC;
-			am_sysinfo.format = VIDEO_DEC_FORMAT_HEVC;
-			break;
-
-
-		case VC1:
-			Debug(3,"AmlVideoSink - VIDEO/VC1\n");
-
-			amlFormat = VFORMAT_VC1;
-			am_sysinfo.format = VIDEO_DEC_FORMAT_WVC1;
-			break;
-
-		default:
-			Debug(3,"AmlVideoSink - VIDEO/UNKNOWN(%d)\n", (int)format);
-            return;
-
-
-	}
-#endif
 
 	int r;
 
@@ -2213,7 +2124,6 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 		r = ioctl(handle, AMSTREAM_IOC_VFORMAT, amlFormat);
 		if (r < 0)
 		{
-			//codecMutex.Unlock();
 			printf("AMSTREAM_IOC_VFORMAT failed.\n");
             return;
 		}
@@ -2224,8 +2134,13 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 		if (!pip) {
 			//codec_h_ioctl_set(handle,AMSTREAM_SET_FRAME_BASE_PATH,FRAME_BASE_PATH_TUNNEL_MODE);
 			if (myKernel == 5 && myMajor == 4 && format == Hevc) {
-				amlSetString("/sys/class/vfm/map","add pip0 vdec.h265.00  ppmgr deinterlace amvideo");
+				amlSetString("/sys/class/vfm/map","add pip0 vdec.h265.00   amvideo");
+
 			} 
+			else if (format == Hevc) {
+				amlSetString("/sys/class/vfm/map","rm vdec-map-0");
+				amlSetString("/sys/class/vfm/map","add pip0 vdec.h265.00  ppmgr deinterlace amvideo");
+			}
 			else if (format == Avc) {
 				amlSetString("/sys/class/vfm/map","rm vdec-map-0");
 				amlSetString("/sys/class/vfm/map","add pip0 vdec.h264.00  ppmgr deinterlace amvideo");
@@ -2236,12 +2151,10 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 		}
 		//amlSetInt("/sys/class/video/blackout_policy", 0);
 
-
 		if (use_pip && PIP_allowed && pip) {
 			isPIP = true;
 		    if (format == Avc) {
-			   //codec_h_ioctl_set(handle,AMSTREAM_SET_FRAME_BASE_PATH,FRAME_BASE_PATH_AMLVIDEO1_AMVIDEO2);
-		       amlSetString("/sys/class/vfm/map","add pip1 vdec.h264.01 videopip");
+		       	amlSetString("/sys/class/vfm/map","add pip1 vdec.h264.01 videopip");
 			}
 			else {
 			   amlSetString("/sys/class/vfm/map","add pip1 vdec.mpeg12.01 videopip");
@@ -2253,7 +2166,6 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 	r = ioctl(handle, AMSTREAM_IOC_SYSINFO, (unsigned long)&am_sysinfo);
 	if (r < 0)
 	{
-		//codecMutex.Unlock();
 		printf("AMSTREAM_IOC_SYSINFO failed.\n");
         return;
 	}
@@ -2273,17 +2185,15 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
             return;
 		}
 	}
+	codec_h_ioctl_set(handle,AMSTREAM_SET_VIDEO_DELAY_LIMIT_MS,1000);
 
 	isOpen = true;
 }
 
 uint64_t GetCurrentVPts(int handle)
 {
-	//codecMutex.Lock();
-
 	if (!isOpen)
 	{
-		//codecMutex.Unlock();
 		printf("The codec is not open.");
 		return 0;
 	}
@@ -2298,35 +2208,27 @@ uint64_t GetCurrentVPts(int handle)
 		//unsigned int vpts;
 		struct am_ioctl_parm parm = { 0 };
 
-		parm.cmd = AMSTREAM_GET_VPTS;
+		parm.cmd = AMSTREAM_GET_VPTS; //_U64;
 		//parm.data_32 = &vpts;
 
 		ret = ioctl(handle, AMSTREAM_IOC_GET, (unsigned long)&parm);
 		if (ret < 0)
 		{
-			//codecMutex.Unlock();
 			printf("AMSTREAM_GET_VPTS failed.\n");
 			return 0;
 		}
-
-		vpts = parm.data_32;
-		//vpts = parm.data_64;
-
-
+		//vpts = parm.data_32;
+		vpts = parm.data_64;
 	}
 	else	// S805
 	{
 		ret = ioctl(handle, AMSTREAM_IOC_VPTS, (unsigned long)&vpts);
 		if (ret < 0)
 		{
-			//codecMutex.Unlock();
 			printf("AMSTREAM_IOC_VPTS failed.\n");
 			return 0;
 		}
 	}
-
-	//codecMutex.Unlock();
-
 	return vpts; // / (double)PTS_FREQ;
 }
 
@@ -2340,7 +2242,6 @@ uint64_t GetCurrentAPts(int handle)
 		printf("The codec is not open.");
 		return 0;
 	}
-
 
 	uint64_t vpts;
 	int ret;
@@ -2360,10 +2261,8 @@ uint64_t GetCurrentAPts(int handle)
 			printf("AMSTREAM_GET_APTS failed.");
 			return 0;
 		}
-
 		//vpts = parm.data_32;
 		vpts = parm.data_64;
-
 	}
 	else	// S805
 	{
@@ -2375,20 +2274,15 @@ uint64_t GetCurrentAPts(int handle)
 			return 0;
 		}
 	}
-
-	//codecMutex.Unlock();
-
 	return vpts; // / (double)PTS_FREQ;
 }
 
 int SetCurrentPCR(int handle, uint64_t value)
 {
-	// codecMutex.Lock();
-
 	if (!isOpen)
 	{
 		//codecMutex.Unlock();
-		//printf("The codec is not open.\n");
+		printf(" SetCurrentPCR The codec is not open.\n");
 		return 2;
 	}
 
@@ -2398,20 +2292,8 @@ int SetCurrentPCR(int handle, uint64_t value)
 		return 1;
 	}
 
-	//unsigned int pts = value * PTS_FREQ;
-
-	//int codecCall = codec_set_pcrscr(&codec, (int)pts);
-	//if (codecCall != 0)
-	//{
-	//	printf("codec_set_pcrscr failed.\n");
-	//}
-
 	// truncate to 32bit
-	unsigned long pts = (unsigned long)(value); // * PTS_FREQ);
-	pts &= 0xffffffff;
-
-	//Debug(3,"set SCR %04lx",pts);
-
+	unsigned long pts = (unsigned long)(value); // * PTS_FREQ)
 
 	if (apiLevel >= S905)	// S905
 	{
@@ -2433,10 +2315,7 @@ int SetCurrentPCR(int handle, uint64_t value)
 			return 2;
 		}
 	}
-
 	return 0;
-
-	//codecMutex.Unlock();
 }
 
 void SetCrop(int codec) {
@@ -2577,11 +2456,7 @@ void ProcessBuffer(VideoHwDecoder *hwdecoder, const AVPacket* pkt)
 			FirstVPTS = pkt->pts;
 			lpts=0;
 			inwrap=0;
-			Debug(3,"first vpts: %#012" PRIx64 "\n",FirstVPTS & 0xffffffff);
-			if (myKernel == 5 && myMajor == 4 && hwdecoder->Format == Hevc) {
-				uint64_t dpts = pkt->pts & 0xffffffff;
-				SetCurrentPCR(hwdecoder->handle,dpts);
-			}
+			Debug(3,"first vpts: %#012" PRIx64 "\n",FirstVPTS);
 		}
 
 		//amlCodec.SetSyncThreshold(pts);
@@ -2617,9 +2492,7 @@ void ProcessBuffer(VideoHwDecoder *hwdecoder, const AVPacket* pkt)
 		lastTimeStamp = timeStamp;
 	}
 
-
 	isExtraDataSent = false;
-
 
 	switch (videoFormat)
 	{
@@ -2755,6 +2628,7 @@ void CheckinPts(int handle, uint64_t pts)
 {
 	//codecMutex.Lock();
 	int r;
+	struct vdec_status stat;
 
 	if (!isOpen)
 	{
@@ -2765,24 +2639,17 @@ void CheckinPts(int handle, uint64_t pts)
 
 	if (apiLevel >= S905)	// S905
 	{
-		//codec_h_ioctl_set(handle,AMSTREAM_SET_TSTAMP,(unsigned long)pts);
+#if 1
+		codec_h_ioctl_set(handle,AMSTREAM_SET_TSTAMP,(uint32_t)pts);
 		
-		codec_h_ioctl_set(handle,AMSTREAM_SET_TSTAMP,(unsigned long)pts);
-		
-		
-#if 0
+#else
 		int cmd_new = AMSTREAM_IOC_SET;
-		unsigned long parm_new;
-		struct am_ioctl_parm parm;
-		
-        memset(&parm, 0, sizeof(parm));
-        parm.cmd = AMSTREAM_SET_TSTAMP_US64;
-        parm.data_64 = pts;
-        parm_new = (unsigned long)&parm;
-        r = ioctl(handle, cmd_new, parm_new);
-		if (r < 0)
-		{
-			//codecMutex.Unlock();
+    	struct am_ioctl_parm parm;
+    	memset(&parm, 0, sizeof(parm));
+    	//parm.data_32 = pts;
+    	parm.data_64 = (pts / 9) * 100;;
+		r = ioctl(handle,AMSTREAM_IOC_TSTAMP_uS64,(unsigned long)&parm.data_64);
+		if (r < 0) {
 			printf("AMSTREAM_IOC_TSTAMP failed\n");
 			return;
 		}
@@ -3113,7 +2980,6 @@ int amlGetBufferFree(int pip)
 			memcpy(&status, &parm.status, sizeof(status));	
 		}
 	}
-
 	//printf("STatus: write %u read %u free %d size %d data %d\n",status.write_pointer,status.read_pointer,status.free_len,status.size,status.data_len);
 	if (status.size)
 		return (status.free_len * 100) / status.size;
