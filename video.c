@@ -1754,7 +1754,7 @@ bool getResolution(char *mode) {
 
 	if (myKernel == 5) {
 		char t[80];
-		sprintf(mode,"U:%dx%dp-0\n",VideoWindowWidth,VideoWindowHeight);
+		sprintf(mode,"U:%dx%dp-0\n",4096,2160);
 		amlGetString("/sys/class/graphics/fb0/modes",t,sizeof(t)); // need to read the modes first
 		amlSetString("/sys/class/graphics/fb0/mode", mode);
 	}
@@ -1806,13 +1806,10 @@ bool getResolution(char *mode) {
 	}
 	
 	if (myKernel == 5) {
-		char t[80];
-		sprintf(mode,"U:%dx%dp-0\n",VideoWindowWidth,VideoWindowHeight);
-		amlGetString("/sys/class/graphics/fb0/modes",t,sizeof(t)); // need to read the modes first
-		amlSetString("/sys/class/graphics/fb0/mode", mode);
 		amlSetInt("/sys/module/aml_media/parameters/di_debug_flag",0);
 		amlSetString("/sys/class/deinterlace/di0/debug","di_debug_flag0x0");
 	}
+
 
 	winx = VideoWindowX; winy = VideoWindowY; winh = VideoWindowHeight; winw = VideoWindowWidth;
 
