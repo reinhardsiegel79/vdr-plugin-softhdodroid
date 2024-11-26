@@ -42,9 +42,9 @@
 #include <sstream>
 #include <signal.h>
 #include <stdlib.h>
-#include "p8-platform/os.h"
-#include "p8-platform/util/StringUtils.h"
-#include "p8-platform/threads/threads.h"
+//#include "p8-platform/os.h"
+//#include "p8-platform/util/StringUtils.h"
+//#include "p8-platform/threads/threads.h"
 
 
 extern "C" {
@@ -55,9 +55,9 @@ extern "C" {
 }
 
 using namespace CEC;
-using namespace P8PLATFORM;
+//using namespace P8PLATFORM;
 
-#include "cecloader.h"
+//#include "cecloader.h"
 
 #if CEC_LIB_VERSION_MAJOR >= 5
 #define LIBCEC_OSD_NAME_SIZE (15)
@@ -68,7 +68,7 @@ using namespace P8PLATFORM;
 ICECCallbacks         g_callbacks;
 libcec_configuration  g_config;
 int                   g_cecLogLevel(-1);
-int                   g_cecDefaultLogLevel(CEC_LOG_ERROR);
+int                   g_cecDefaultLogLevel(0);
 std::string           g_strPort;
 ICECAdapter*          g_parser;
 
@@ -122,7 +122,7 @@ int cec_init() {
     g_callbacks.keyPress        = NULL;
     g_callbacks.commandReceived = NULL;
     g_callbacks.alert           = NULL;
-    g_config.callbacks          = NULL;
+    g_config.callbacks          = &g_callbacks;
 
     g_config.deviceTypes.Add(CEC_DEVICE_TYPE_RECORDING_DEVICE);
 
@@ -130,14 +130,14 @@ int cec_init() {
         g_cecLogLevel = g_cecDefaultLogLevel;
 
 
-    g_parser = LibCecInitialise(&g_config);
+    g_parser = CECInitialise(&g_config);
     if (!g_parser)
     {
     
         std::cout << "Cannot load libcec.so" << std::endl;
 
         if (g_parser)
-            UnloadLibCec(g_parser);
+            CECDestroy(g_parser);
 
         return 0;
     }
@@ -146,7 +146,7 @@ int cec_init() {
 
     if (!g_parser->Open(g_strPort.c_str()))
     {
-        UnloadLibCec(g_parser);
+        CECDestroy(g_parser);
         return 0;
     }
     
@@ -154,7 +154,9 @@ int cec_init() {
 }
 
 int cec_exit() {
-    if (g_parser)
-        UnloadLibCec(g_parser);
+    if (g_parser) {
+        CECDestroy(g_parser);
+        g_parser = NULL;
+    }
     return 0;
 }
