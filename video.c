@@ -101,6 +101,7 @@ static int OsdConfigHeight;             ///< osd configured height
 static int OsdWidth;                    ///< osd width
 static int OsdHeight;                   ///< osd height
 int OsdShown = 0;
+int OsdIsClosing = 0;
 static void (*VideoEventCallback)(void) = NULL; /// callback function to notify
 
 /// Default cut top and bottom in pixels
@@ -208,6 +209,7 @@ int myTrickSpeed= 0;
 int inTrickModeStillPicture = 0;
 int ratio;
 int pip_ratio;
+int ratio_checked = 0;
 int CurrentSyncThresh;
 
 AVRational timeBase;
@@ -1081,6 +1083,8 @@ extern char SuspendMode;
 	}
 #endif
 	amlSetInt("/sys/class/graphics/fb0/blank", 1);
+	if (myKernel == 5)
+		close(fd);
 #if 1
 	// Restore alpha setting
 	fd_m = open("/dev/fb0", O_RDWR);
@@ -1353,12 +1357,15 @@ void CodecVideoDecode(VideoDecoder * decoder, const AVPacket * avpkt)
 
 void ClearDisplay(void)
 {	
+	OsdIsClosing = 1;
 	if (myKernel == 4) {
 		amlSetInt("/sys/class/graphics/fb0/osd_clear", 1);
 	} else {
 		amlSetInt("/sys/class/graphics/fb0/blank", 1);
 	}
+	usleep(20000);
 	OsdShown = 0;
+	OsdIsClosing = 0;
     return;
 
 }
@@ -1720,8 +1727,9 @@ bool getResolution(char *mode) {
 
 	dovi = aml_support_dolby_vision();
 	if (dovi) {
-		amlSetString("/sys/module/aml_media/parameters/dolby_vision_enable","Y");  // Enable Dolby Vision
-		Debug(3,"Dolby Vision Enabled");
+		// FIXME if enabled then HDR is not working. Needs to be enabled only when DV stream is played 
+		amlSetString("/sys/module/aml_media/parameters/dolby_vision_enable","N");  // Disable Dolby Vision
+		Debug(3,"Dolby Vision Supported");
 	} else {
 		Debug(3,"No Dolby Vision Support");
 	}
@@ -1776,12 +1784,14 @@ bool getResolution(char *mode) {
 
 	amlSetInt("/sys/class/graphics/fb0/blank", 1);
 
+#if 0
 	if (myKernel == 5) {
 		char t[80];
 		sprintf(mode,"U:%dx%dp-0\n",4096,2160);
 		amlGetString("/sys/class/graphics/fb0/modes",t,sizeof(t)); // need to read the modes first
 		amlSetString("/sys/class/graphics/fb0/mode", mode);
 	}
+#endif
 
 	fd = open("/dev/fb0", O_RDWR);
 
@@ -1815,7 +1825,9 @@ bool getResolution(char *mode) {
 	} else {
 		DmaBufferHandle = h[1];
 	}
-	close(fd);
+	if (myKernel == 4)
+		close(fd);
+		
 	if (myKernel == 5) {
 		   	OsdWidth = VideoWindowWidth;  
 			OsdHeight = VideoWindowHeight; 
@@ -1837,27 +1849,31 @@ bool getResolution(char *mode) {
 
 	winx = VideoWindowX; winy = VideoWindowY; winh = VideoWindowHeight; winw = VideoWindowWidth;
 
-	
-	// Check if H264-PIP is available
-	int fd1 = open("/dev/amstream_vframe", O_WRONLY);
-	int fd2 = open("/dev/amstream_vframe", O_WRONLY);  // can we open a second time
+	if (myKernel == 4) {
+		// Check if H264-PIP is available
+		int fd1 = open("/dev/amstream_vframe", O_WRONLY);
+		int fd2 = open("/dev/amstream_vframe", O_WRONLY);  // can we open a second time
 
-	if (fd2 >= 0 ) {
-		int amlFormat = VFORMAT_MPEG12;
-		char vfm_status[512];
-		use_pip = 1;
+		if (fd2 >= 0 ) {
+			int amlFormat = VFORMAT_MPEG12;
+			char vfm_status[512];
+			use_pip = 1;
 
-		codec_h_ioctl_set(fd2,AMSTREAM_SET_VFORMAT,amlFormat);
-		codec_h_ioctl_set(fd2,AMSTREAM_PORT_INIT,0);
-		if (amlGetString("/sys/class/vfm/map",vfm_status,sizeof(vfm_status)) == 0) {
-			if (strstr(vfm_status,"mpeg12")) {
-				use_pip_mpeg2 = 1;
+			codec_h_ioctl_set(fd2,AMSTREAM_SET_VFORMAT,amlFormat);
+			codec_h_ioctl_set(fd2,AMSTREAM_PORT_INIT,0);
+			if (amlGetString("/sys/class/vfm/map",vfm_status,sizeof(vfm_status)) == 0) {
+				if (strstr(vfm_status,"mpeg12")) {
+					use_pip_mpeg2 = 1;
+				}
 			}
+			close (fd2);
 		}
-		close (fd2);
+		close(fd1);
 	}
-	close(fd1);
-	
+	else {
+		use_pip = 0;
+		use_pip_mpeg2 = 0;
+	}
 
 	char fsaxis_str[256] = {0};
 	char waxis_str[256] = {0};
@@ -1899,6 +1915,7 @@ extern void DelPip(void);
  void CodecVideoOpen(VideoDecoder *decoder, int codec_id, AVPacket *avpkt)
  {
 	int pip = decoder->HwDecoder->pip;
+	ratio_checked = 0;
 	switch (codec_id)
 	{
 	case AV_CODEC_ID_MPEG2VIDEO:
@@ -2089,7 +2106,7 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 				PIP_allowed = true;
 				hwdecoder->handle = open("/dev/amstream_vframe", flags);
 			} else {
-				hwdecoder->handle = open("/dev/amstream_vbuf", flags);
+				hwdecoder->handle = open("/dev/amstream_vframe", flags);
 				if (use_pip && !pip && isPIP) {
 					DelPip();
 				}
@@ -2170,7 +2187,8 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 				amlSetString("/sys/class/vfm/map","rm vdec-map-0");
 				amlSetString("/sys/class/vfm/map","add pip0 vdec.h264.00  ppmgr deinterlace amvideo");
 			}
-			else if (use_pip_mpeg2 && (format == Mpeg2)) {
+			else if (format == Mpeg2) {
+				amlSetString("/sys/class/vfm/map","rm vdec-map-0");
 				amlSetString("/sys/class/vfm/map","add pip0 vdec.mpeg12.00 ppmgr deinterlace  amvideo");
 			}
 		}
@@ -2503,11 +2521,12 @@ void ProcessBuffer(VideoHwDecoder *hwdecoder, const AVPacket* pkt)
 			if (pip ? pip_ratio : ratio != r)
 				SetScreenMode(r, pip);
 	}
+#if 0
 	else if (hwdecoder->Format == Avc || hwdecoder->Format == Hevc){
 		if (pip ? pip_ratio : ratio != 3)
 			SetScreenMode(3, pip);
 	}
-
+#endif
 	pts = 0;
 
 	if (pkt->pts != AV_NOPTS_VALUE)
@@ -2646,6 +2665,26 @@ void ProcessBuffer(VideoHwDecoder *hwdecoder, const AVPacket* pkt)
 			printf("Codec not Supported\n");
 			return;
 	}
+
+	if ((hwdecoder->Format == Avc || hwdecoder->Format == Hevc) && !ratio_checked){
+		char vdec_status[512];
+		if (amlGetString("/sys/class/vdec/vdec_status",vdec_status,sizeof(vdec_status)) >= 0 &&
+		  		*vdec_status && 
+		  		!strstr(vdec_status,"No vdec") && 
+		 		 scan_str(vdec_status,"frame count : ") > 160) {
+			ratio_checked = 1;
+			if (scan_str(vdec_status,"ratio_control : ") != 9000) {
+				if (pip ? pip_ratio : ratio != 2) {
+					SetScreenMode(2, pip);
+				}
+			}
+			else {
+				if (pip ? pip_ratio : ratio != 3) {
+					SetScreenMode(3, pip);
+				}
+			}
+		}
+	}
 	//playPauseMutex.Unlock();
 }
 
@@ -2653,7 +2692,7 @@ void CheckinPts(int handle, uint64_t pts)
 {
 	//codecMutex.Lock();
 	int r;
-	struct vdec_status stat;
+	//struct vdec_status stat;
 
 	if (!isOpen)
 	{

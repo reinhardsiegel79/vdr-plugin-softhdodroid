@@ -1043,11 +1043,16 @@ cOglCmdCopyBufferToOutputFb::cOglCmdCopyBufferToOutputFb(cOglFb * fb, cOglOutput
 }
 
 unsigned char posd[3840*2160*4];
-extern int OsdShown,myKernel;
+extern int OsdShown,OsdIsClosing,myKernel;
 extern "C" int amlSetInt(char *, int);
 
 bool cOglCmdCopyBufferToOutputFb::Execute(void)
 {
+    static int Opening=0;
+    char path[] = "/sys/class/graphics/fb0/blank";
+    if (OsdIsClosing || Opening)
+        return true;
+    Opening = 1;
     eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext);
     OsdShown = 1;
     if (DmaBufferHandle >= 0) {
@@ -1083,8 +1088,10 @@ bool cOglCmdCopyBufferToOutputFb::Execute(void)
         //VertexBuffers[vbTexture]->SetShaderBorderColor(bcolor);
 
         glViewport(0, 0, oFb->Width(), oFb->Height());
-        if (!fb->BindTexture())
+        if (!fb->BindTexture()) {
+            Opening = 0;
             return false;
+        }
 
         VertexBuffers[vbTexture]->Bind();
         VertexBuffers[vbTexture]->SetVertexData(quadVertices);
@@ -1096,8 +1103,10 @@ bool cOglCmdCopyBufferToOutputFb::Execute(void)
         oFb->Unbind();
         fb->BindRead();
         if (myKernel == 5) {
-	        amlSetInt("/sys/class/graphics/fb0/blank",0 );
+            usleep(25000);
+	        amlSetInt(path, 0 );
         }
+        Opening = 0;
         return true;
     }
     //return true;
@@ -1106,8 +1115,7 @@ bool cOglCmdCopyBufferToOutputFb::Execute(void)
     fb->BindRead();
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    if (posd)
-        glReadPixels(0, 0, fb->Width(), fb->Height(), GL_RGBA, GL_UNSIGNED_BYTE, posd);
+    glReadPixels(0, 0, fb->Width(), fb->Height(), GL_RGBA, GL_UNSIGNED_BYTE, posd);
     glFlush();
 
      // Allocate a buffer
@@ -1974,7 +1982,7 @@ int cOglThread::StoreImage(const cImage & image)
     tColor *argb = MALLOC(tColor, imgSize);
 
     if (!argb) {
-        esyslog("[softhddev]memory allocation of %ld kb for OSD image failed", (imgSize * sizeof(tColor)) / 1024);
+        esyslog("[softhddev]memory allocation of %d kb for OSD image failed", (imgSize * sizeof(tColor)) / 1024);
         ClearSlot(slot);
         slot = 0;
         return 0;
