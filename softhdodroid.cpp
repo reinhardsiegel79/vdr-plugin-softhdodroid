@@ -59,11 +59,8 @@ extern "C"
 /// vdr-plugin version number.
 /// Makefile extracts the version number for generating the file name
 /// for the distribution archive.
-<<<<<<< HEAD
 static const char *const VERSION = "5.10"
-=======
-static const char *const VERSION = "4.18"
->>>>>>> parent of aad89e4 (Fix CEC for use in Kodi environment)
+
 #ifdef GIT_REV
     "-GIT-" GIT_REV
 #endif

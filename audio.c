@@ -1099,11 +1099,11 @@ static void AlsaSetVolume(int volume)
 {
 #ifdef USE_CEC
     static int vol = -1;
-<<<<<<< HEAD
+
     //char command[20];
     //uint64_t moses=GetusTicks();
-=======
->>>>>>> parent of aad89e4 (Fix CEC for use in Kodi environment)
+
+
 
     if (use_cec) {
         if (vol == -1 && volume) {
@@ -1112,7 +1112,7 @@ static void AlsaSetVolume(int volume)
         if (volume) {
             if (vol > volume) {
                 cec_send_command(AudioCECDev,"down");
-<<<<<<< HEAD
+
                 //sprintf(command,"1%1d:44:42",AudioCECDev);
                 //Debug(3,"CEC Command %s\n",command);
                 //ProcessCommandTX(command);
@@ -1121,10 +1121,10 @@ static void AlsaSetVolume(int volume)
                 //sprintf(command,"1%1d:44:41",AudioCECDev);
                 //Debug(3,"CEC Command %s\n",command);
                 //ProcessCommandTX(command);
-=======
+
             }
             if(vol < volume) {
->>>>>>> parent of aad89e4 (Fix CEC for use in Kodi environment)
+
                 cec_send_command(AudioCECDev,"up");
             }
             vol = volume;
