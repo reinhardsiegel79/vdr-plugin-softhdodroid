@@ -58,10 +58,16 @@ extern void AudioSetAutoAES(int);       ///< set automatic AES flag handling
 extern void AudioInit(void);            ///< setup audio module
 extern void AudioExit(void);            ///< cleanup and exit audio module
 
+<<<<<<< HEAD
 int cec_init();
 int cec_exit();
 int ProcessCommandTX(char *);
 int cec_send_command(int ,char *);
+=======
+extern int cec_init();
+extern int cec_send_command(int ,char *);
+extern int cec_exit();
+>>>>>>> parent of aad89e4 (Fix CEC for use in Kodi environment)
 
 //----------------------------------------------------------------------------
 //  Variables
