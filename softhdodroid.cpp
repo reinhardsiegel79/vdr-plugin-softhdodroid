@@ -59,7 +59,8 @@ extern "C"
 /// vdr-plugin version number.
 /// Makefile extracts the version number for generating the file name
 /// for the distribution archive.
-static const char *const VERSION = "5.10"
+
+static const char *const VERSION = "5.12"
 
 #ifdef GIT_REV
     "-GIT-" GIT_REV
@@ -2709,7 +2710,7 @@ int cSoftHdDevice::PlayTsAudio(const uchar * data, int length)
 */
 uchar *cSoftHdDevice::GrabImage(int &size, bool jpeg, int quality, int width, int height)
 {
-    dsyslog("[softhddev]%s: %d, %d, %d, %dx%d\n", __FUNCTION__, size, jpeg, quality, width, height);
+    //dsyslog("[softhddev]%s: %d, %d, %d, %dx%d\n", __FUNCTION__, size, jpeg, quality, width, height);
 
     if (SuspendMode != NOT_SUSPENDED) {
         return NULL;
