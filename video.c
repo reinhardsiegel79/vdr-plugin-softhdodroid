@@ -117,7 +117,6 @@ int locale_dot=0;
 int myKernel,myMajor,myMinor;			/// Kernel Version
 int dovi;								/// Supports Dolby Vision
 
-
 #ifdef PERFTEST
 uint64_t last_time = 0,firstvpts,firstapts;
 #endif
@@ -225,6 +224,8 @@ const long USE_IDR_FRAMERATE = 0x04;
 const long UCODE_IP_ONLY_PARAM = 0x08;
 const long MAX_REFER_BUF = 0x10;
 const long ERROR_RECOVERY_MODE_IN = 0x20;
+
+#include "drm.c"
 
 /// Poll video events.
  void VideoPollEvent(void) {};
@@ -651,7 +652,7 @@ int GrabOsd(char *base, int width, int height) {
 
 	int _fbfd = open("/dev/fb0", O_RDONLY);
 	if (_fbfd < 0) {
-		printf("Unable to open fd0\n");
+		Debug(3,"Unable to open Framebuffer fd0\n");
 		return false;
 	}
 
@@ -663,12 +664,14 @@ int GrabOsd(char *base, int width, int height) {
 	capSize = VideoWindowWidth * VideoWindowHeight * bytesPerPixel;
 
 	/* map the device to memory */
-	char *_fbp = (char*)mmap(0, capSize, PROT_READ, MAP_PRIVATE | MAP_NORESERVE, _fbfd, 0);
-	if (!_fbp)	{
-		printf("Unable to MMAP fb0\n");
+	char* _fbp = (char*)mmap(0, capSize, PROT_READ, MAP_SHARED , _fbfd, 0);
+	
+	if (_fbp == MAP_FAILED)	{
+		Debug(3,"Unable to MMAP Framebuffer fb0\n");
 		return false;
 	}
-	memcpy(base,_fbp,capSize);
+
+	memcpy(base,_fbp, capSize);
 	munmap(_fbp, capSize);
 	close(_fbfd);
 	return true;
@@ -1030,7 +1033,7 @@ void VideoGetVideoSize(VideoHwDecoder *i, int *width, int *height, int *aspect_n
 
  void VideoOsdExit(void) {};         ///< Cleanup osd.
 
-#include "drm.c"
+
 
 extern char SuspendMode;
 
@@ -1083,8 +1086,10 @@ extern char SuspendMode;
 	}
 #endif
 	amlSetInt("/sys/class/graphics/fb0/blank", 1);
-	if (myKernel == 5)
+	if (myKernel == 5) {
+		drm_clean_up();
 		close(fd);
+	}
 #if 1
 	// Restore alpha setting
 	fd_m = open("/dev/fb0", O_RDWR);
@@ -1847,9 +1852,10 @@ bool getResolution(char *mode) {
 		}
 	}
 	
-	if (myKernel == 5) {
+	if (myKernel == 5 ) {
 		amlSetInt("/sys/module/aml_media/parameters/di_debug_flag",0);
-		amlSetString("/sys/class/deinterlace/di0/debug","di_debug_flag0x0");
+		if (myMinor == 4) 
+			amlSetString("/sys/class/deinterlace/di0/debug","di_debug_flag0x0");
 	}
 
 
@@ -1969,6 +1975,12 @@ extern void DelPip(void);
 		    amlSetVideoAxis(0,winx,winy,winx+winw,winy+winh);
 		}
 	}
+	if (codec_id == AV_CODEC_ID_MPEG2VIDEO){
+		SetScreenMode(VIDEO_WIDEOPTION_16_9, pip);
+	}
+	else {
+		SetScreenMode(VIDEO_WIDEOPTION_NORMAL, pip);
+	}
 };
 
 
@@ -2076,14 +2088,14 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 	switch (format)
 	{
 		case Hevc:
-			if (myKernel == 5 && myMajor == 4) {
+			if (myKernel == 5) {
 				if (dovi) {
 					hwdecoder->handle = open("/dev/amstream_dves_hevc_frame", flags); 
 				} else {
 					hwdecoder->handle = open("/dev/amstream_hevc_frame", flags); 
 				}
 			} else {
-				hwdecoder->handle = open("/dev/amstream_hevc", flags);
+				hwdecoder->handle = open("/dev/amstream_hevc_frame", flags);
 			}
 			Debug(3,"AmlVideoSink - VIDEO/HEVC\n");
 
@@ -2181,8 +2193,9 @@ void InternalOpen(VideoHwDecoder *hwdecoder, int format, double frameRate)
 	{
 		if (!pip) {
 			//codec_h_ioctl_set(handle,AMSTREAM_SET_FRAME_BASE_PATH,FRAME_BASE_PATH_TUNNEL_MODE);
-			if (myKernel == 5 && myMajor == 4 && format == Hevc) {
-				amlSetString("/sys/class/vfm/map","add pip0 vdec.h265.00   amvideo");
+			if (myKernel == 5 && format == Hevc) {
+				amlSetString("/sys/class/vfm/map","rm vdec-map-0");
+				amlSetString("/sys/class/vfm/map","add pip0 vdec.h265.00 amvideo");
 
 			} 
 			else if (format == Hevc) {
@@ -2664,6 +2677,7 @@ void ProcessBuffer(VideoHwDecoder *hwdecoder, const AVPacket* pkt)
 			case Hevc:
 						{
 							int nal_unit_type;
+							VideoSetHdr2Sdr(Hdr2Sdr);  // Update HDR2SDR Setting is needed
 							nalHeader = (unsigned char*)pkt->data;
 							while (len--) {
 								if (nalHeader[0] == 0 &&
@@ -2808,11 +2822,6 @@ void ProcessBuffer(VideoHwDecoder *hwdecoder, const AVPacket* pkt)
 		}
 	}
 #endif
-
-	if (hwdecoder->Format == Avc || hwdecoder->Format == Hevc){
-		if (pip ? pip_ratio != 0 : ratio != 0)
-			SetScreenMode(0, pip);
-	}
 
 	pts = 0;
 
@@ -3418,8 +3427,8 @@ void getKernelVersion() {
 
     errno = 0;
     if (uname(&buffer) != 0) {
-        printf("Error uname\n");
-		myKernel = 4;
+        Debug(3,"Error uname  assume Kernel 5\n");
+		myKernel = 5;
         return;
     }
 
@@ -3446,32 +3455,24 @@ void getKernelVersion() {
 	myKernel = ver[0];
 	myMajor = ver[1];
 	myMinor = ver[2];
-    //printf("Kernel %ld Major %ld Minor %ld\n", ver[0], ver[1], ver[2]);
+    Debug(3,"Kernel %ld Major %ld Minor %ld\n", ver[0], ver[1], ver[2]);
+	
 
 }
 
 void SetScreenMode(int aspect, int pip)
 {
-	uint32_t screenMode;
 	int r;
 
 	if (!isOpen) {
 		printf("The codec is not open. %s\n",__FUNCTION__);
 		return;
 	}
-#if 0
-	if (aspect == 3) {
-		screenMode = (uint32_t)VIDEO_WIDEOPTION_16_9;
-	} else {
-		screenMode = (uint32_t)VIDEO_WIDEOPTION_4_3;
-	}
-	screenMode = (uint32_t)VIDEO_WIDEOPTION_NORMAL;
-#endif
-	screenMode = aspect;
+
 	
 	if (pip) {
 		if (aspect != pip_ratio) {
-			r = ioctl(cntl_handle, AMSTREAM_IOC_SET_PIP_SCREEN_MODE, &screenMode);
+			r = ioctl(cntl_handle, AMSTREAM_IOC_SET_PIP_SCREEN_MODE, &aspect);
 			if (r != 0) {
 				Debug(3, "AMSTREAM_IOC_SET_PIP_SCREEN_MODE failed, errno=%d", errno);
 			} else {
@@ -3480,7 +3481,7 @@ void SetScreenMode(int aspect, int pip)
 		}
 	} else {
 		if (aspect != ratio) {
-			r = ioctl(cntl_handle, AMSTREAM_IOC_SET_SCREEN_MODE, &screenMode);
+			r = ioctl(cntl_handle, AMSTREAM_IOC_SET_SCREEN_MODE, &aspect);
 			if (r != 0) {
 				Debug(3, "AMSTREAM_IOC_SET_SCREEN_MODE failed, errno=%d", errno);
 			} else {

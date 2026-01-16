@@ -60,7 +60,7 @@ extern "C"
 /// Makefile extracts the version number for generating the file name
 /// for the distribution archive.
 
-static const char *const VERSION = "5.12"
+static const char *const VERSION = "5.18"
 
 #ifdef GIT_REV
     "-GIT-" GIT_REV
